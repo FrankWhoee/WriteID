@@ -26,7 +26,7 @@ for f in files:
 
 words = set(text_to_word_sequence(words))
 X, Y = [], []
-n = 150
+n = 100
 max_len = 0
 for f in files:
     with open("data/" + f, 'r') as file:
@@ -89,14 +89,25 @@ x_left_train, x_left_test, x_right_train, x_right_test, y_out_train, y_out_test 
 input1 = Input(shape=(max_len,))
 input2 = Input(shape=(max_len,))
 
-d1 = Dense(256, activation='sigmoid', kernel_regularizer=l2(1e-3))(input1)
-d2 = Dense(256, activation='sigmoid', kernel_regularizer=l2(1e-3))(input2)
-concat_layer = Concatenate()([d1, d2])
-d3 = Dense(128, activation='sigmoid', kernel_regularizer=l2(1e-3))(concat_layer)
-output = Dense(2, activation='sigmoid', kernel_regularizer=l2(1e-3))(d3)
+e1 = Embedding(output_dim=512, input_dim=10000, input_length=100)(input1)
+e2 = Embedding(output_dim=512, input_dim=10000, input_length=100)(input2)
+# d1 = Dense(512, activation='sigmoid', kernel_regularizer=l2(1e-3))(e1)
+# d2 = Dense(512, activation='sigmoid', kernel_regularizer=l2(1e-3))(e2)
+d1 = e1
+d2 = e2
+
+# A LSTM will transform the vector sequence into a single vector,
+# containing information about the entire sequence
+lstm1 = LSTM(32)(d1)
+lstm2 = LSTM(32)(d2)
+concat_layer = Concatenate()([lstm1, lstm2])
+d3 = Dense(64, activation='relu', kernel_regularizer=l2(1e-3))(concat_layer)
+d4 = Dense(64, activation='relu', kernel_regularizer=l2(1e-3))(d3)
+d5 = Dense(64, activation='relu', kernel_regularizer=l2(1e-3))(d4)
+output = Dense(2, activation='sigmoid', kernel_regularizer=l2(1e-3))(d5)
 
 model = Model(inputs=[input1, input2], outputs=output)
-model.compile(optimizer=Adam(lr=.00004, clipnorm=1.), loss='sparse_categorical_crossentropy')
+model.compile(optimizer=Adam(lr=.0001, clipnorm=1.), loss='sparse_categorical_crossentropy')
 model.summary()
 
 session_save_file = 'writeid-' + str(int(time.time())) + '.h5'
@@ -108,12 +119,13 @@ class SaveOnFit(keras.callbacks.Callback):
         self.prev_loss = np.inf
 
     def on_epoch_end(self, epoch, logs=None):
-        current = logs.get('val_loss')
-        if current < self.prev_loss and logs.get('loss') > logs.get('val_loss'):
+        current = logs.get('loss')
+        if current < self.prev_loss :
             print("Model improved, and is not overfit.")
             print(self.prev_loss)
             print(logs.get('loss'))
             print(logs.get('val_loss'))
+            self.prev_loss = logs.get('val_loss')
             self.model.save(session_save_file)
 
 
@@ -121,7 +133,7 @@ model.fit([x_left_train, x_right_train],
           y_out_train,
           batch_size=8,
           validation_split=0.1,
-          epochs=100,
+          epochs=200,
           callbacks=[SaveOnFit()])
 
 c, t = validate(x_left_test, x_right_test, y_out_test, model)
